@@ -19,6 +19,11 @@ except ImportError:
     from opendash.display import Canvas
     from opendash.touch import CAL_POINTS
 
+# The SHFW table and its screens live in shfwui.py and are imported on
+# demand, keeping roughly 26 KB of bytecode off the boot heap.
+_shfw_ui_mod = None
+_shfw_ui_error = ""
+
 SCR_MAIN = 0
 SCR_SET = 1
 SCR_APPEAR = 2
@@ -33,6 +38,9 @@ SCR_PICK = 10
 SCR_CAL = 11
 SCR_SHFW = 12
 SCR_SHFW_LIST = 13
+SCR_SHFW_EDIT = 14
+SCR_SHFW_BAK = 15
+SCR_SHFW_PROF = 16
 
 GCX, GCY = 120, 118
 GR_O, GR_I = 82, 69
@@ -82,6 +90,21 @@ class UI:
         self._cal_key = None
         self._drag = -1
         self.ota_toggle_rect = (8, 54, 224, 44)
+
+        self.shfw_grp = 0
+        self.shfw_page = 0
+        self.shfw_list = ()
+        self.shfw_sel = -1
+        self.shfw_edit = 0
+        self.shfw_orig = 0
+        self.shfw_edit_ready = False
+        self.shfw_msg = ""
+        self.shfw_msg_col = C.COL_DIM
+        self.shfw_bak_sel = 0
+        self.shfw_bak_slots = ()
+        self.shfw_prof_sel = 0
+        self.shfw_prof_slots = ()
+        self.shfw_prof_active = 0
 
     # ------------------------------------------------------------- helpers
     def t(self, en, ru):
@@ -654,7 +677,9 @@ class UI:
             self.enter(SCR_LED)
         elif self.scr == SCR_LED_EFFECT:
             self.enter(SCR_LED)
-        elif self.scr in (SCR_SHFW_LIST,):
+        elif self.scr == SCR_SHFW_EDIT:
+            self.enter(SCR_SHFW_LIST)
+        elif self.scr in (SCR_SHFW_LIST, SCR_SHFW_BAK, SCR_SHFW_PROF):
             self.enter(SCR_SHFW)
         else:
             self.enter(SCR_SET)
@@ -720,6 +745,12 @@ class UI:
             self.draw_set_shfw()
         elif scr == SCR_SHFW_LIST:
             self.draw_shfw_list()
+        elif scr == SCR_SHFW_EDIT:
+            self.draw_shfw_edit()
+        elif scr == SCR_SHFW_BAK:
+            self.draw_shfw_backup()
+        elif scr == SCR_SHFW_PROF:
+            self.draw_shfw_profiles()
 
     def draw_set_root(self):
         self.settings_header(self.t("SETTINGS", "НАСТРОЙКИ"))
@@ -1001,29 +1032,98 @@ class UI:
             self.field("otastat", 10, 246, 220, 14, status, 1,
                        col, C.COL_BG, "tl", 1, 220)
 
+    # ------------------------------------------------------------- SHFW UI
+    # The screens and the 83-register table are imported only when the rider
+    # opens the SHFW menu.  This keeps Ninebot() and UI() within the small
+    # boot heap of an ESP32 CYD without PSRAM.
+    def _shfw_ui_failed(self):
+        self.settings_header(self.t("SHFW SETTINGS", "Настройки SHFW"))
+        self.text_at(
+            8, 40, 224, 24,
+            self.t("SHFW module is not available",
+                   "Модуль SHFW недоступен"),
+            2, C.COL_BAD, C.COL_BG, "tl", 1, 224)
+        self.text_at(
+            8, 76, 224, 40,
+            self.shfw_msg or self.t(
+                "Reinstall the firmware files.",
+                "Переустановите файлы прошивки."),
+            1, C.COL_DIM, C.COL_BG, "tl", 1, 224)
+
+    def _shfw_ui(self):
+        global _shfw_ui_mod, _shfw_ui_error
+        if _shfw_ui_mod is not None:
+            return _shfw_ui_mod
+        gc.collect()
+        try:
+            try:
+                from opendash import shfwui as mod
+            except ImportError:
+                from . import shfwui as mod
+            _shfw_ui_mod = mod
+            _shfw_ui_error = ""
+        except Exception as exc:
+            _shfw_ui_error = "%s: %s" % (exc.__class__.__name__, exc)
+            print("SHFW UI load failed:", _shfw_ui_error)
+        return _shfw_ui_mod
+
+    def open_shfw(self):
+        self._shfw_open_failed = False
+        mod = self._shfw_ui()
+        if mod is None:
+            self.shfw_msg = self.t(
+                "SHFW module could not be loaded: " + _shfw_ui_error,
+                "Не удалось загрузить модуль SHFW: " + _shfw_ui_error)
+            self.shfw_msg_col = C.COL_BAD
+            self.enter(SCR_SHFW)
+            self.settings_dirty = True
+            return
+        try:
+            return mod.open_shfw(self)
+        except MemoryError as exc:
+            self._shfw_open_failed = True
+            self.shfw_msg = self.t(
+                "Not enough memory for SHFW: %s" % exc,
+                "Не хватает памяти для SHFW: %s" % exc)
+            self.shfw_msg_col = C.COL_BAD
+            self.enter(SCR_SHFW)
+            self.settings_dirty = True
+
     def draw_set_shfw(self):
-        self.settings_header("SHFW")
-        self.text_at(10, 44, 220, 24,
-                     self.t("SHFW editor is not ported yet.", "Редактор SHFW пока не перенесён."),
-                     2, C.COL_WARN, C.COL_BG, "tl", 1, 220)
-        self.text_at(10, 74, 220, 56,
-                     self.t("The original project can view and edit 83 registers of the "
-                            "custom SHFW firmware. This MicroPython port currently keeps "
-                            "the scooter read-only.",
-                            "Оригинальный проект умеет читать и править 83 регистра "
-                            "кастомной прошивки SHFW. В этой версии на MicroPython "
-                            "самокат работает только на чтение."),
-                     1, C.COL_DIM, C.COL_BG, "tl", 1, 220)
-        self.text_at(10, 160, 220, 60,
-                     self.t("Read-only is the safe default: no accidental writes to ESC.",
-                            "Режим только чтения безопасен: случайная запись в ESC невозможна."),
-                     1, C.COL_GOOD, C.COL_BG, "tl", 1, 220)
+        mod = self._shfw_ui()
+        if mod is None or getattr(self, "_shfw_open_failed", False):
+            return self._shfw_ui_failed()
+        return mod.draw_set_shfw(self)
 
     def draw_shfw_list(self):
-        self.settings_header("SHFW")
-        self.text_at(10, 40, 220, 20, "not available", 2, C.COL_DIM, C.COL_BG, "tl", 1, 220)
+        mod = self._shfw_ui()
+        if mod is None:
+            return self._shfw_ui_failed()
+        return mod.draw_shfw_list(self)
 
-    # ---------------------------------------------------------- calibration
+    def draw_shfw_edit(self):
+        mod = self._shfw_ui()
+        if mod is None:
+            return self._shfw_ui_failed()
+        return mod.draw_shfw_edit(self)
+
+    def draw_shfw_backup(self):
+        mod = self._shfw_ui()
+        if mod is None:
+            return self._shfw_ui_failed()
+        return mod.draw_shfw_backup(self)
+
+    def draw_shfw_profiles(self):
+        mod = self._shfw_ui()
+        if mod is None:
+            return self._shfw_ui_failed()
+        return mod.draw_shfw_profiles(self)
+
+    def touch_shfw(self, t, x, y):
+        mod = self._shfw_ui()
+        if mod is not None:
+            return mod.touch_shfw(self, t, x, y)
+
     def draw_calibration(self):
         d = self.d
         d.fill(C.COL_BG)
@@ -1162,6 +1262,10 @@ class UI:
         if t.swipe:
             return
         scr = self.scr
+        if scr in (SCR_SHFW, SCR_SHFW_LIST, SCR_SHFW_EDIT,
+                   SCR_SHFW_BAK, SCR_SHFW_PROF):
+            self.touch_shfw(t, x, y)
+            return
         if scr == SCR_SET and (t.ev_tap or t.ev_long):
             for i in range(10):
                 if not hit(x, y, 8, 32 + i * 28, 224, 27):
@@ -1186,7 +1290,7 @@ class UI:
                 elif i == 7:
                     self.enter(SCR_OTA)
                 elif i == 8:
-                    self.enter(SCR_SHFW)
+                    self.open_shfw()
                 return
             return
         if scr == SCR_APPEAR and t.ev_tap:

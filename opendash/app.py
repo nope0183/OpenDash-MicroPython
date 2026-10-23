@@ -1,4 +1,5 @@
 '''Application glue: hardware, settings, BLE, LED, OTA and UI loop.'''
+import gc
 import machine
 import time
 
@@ -37,6 +38,9 @@ class App:
         self.d.set_rotation(self.cfg['flip'] * 2)
         self.d.set_backlight(self.cfg['bright'])
         self.touch = Touch()
+        # Import/compile garbage and display buffers can leave the heap
+        # fragmented; reclaim it before the BLE client allocates its caches.
+        gc.collect()
         self.nb = Ninebot()
         self.led = LedStrip()
         self.ota = OtaServer()
@@ -91,6 +95,8 @@ class App:
         cal = self.cfg['cal']
         if self.ota.enabled:
             self.ota.stop()
+        self.nb.shfw_force = False
+        self.nb.shfw_reset(lock=True)
         self.cfg = storage.defaults()
         self.cfg['cal'] = cal
         self.ui.cfg = self.cfg

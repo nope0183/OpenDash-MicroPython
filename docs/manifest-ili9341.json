@@ -1,6 +1,6 @@
 {
   "name": "OpenDash MicroPython (ILI9341)",
-  "version": "2.1.1-mpy.1",
+  "version": "2.1.1-mpy.2",
   "new_install_prompt_erase": true,
   "builds": [
     {
