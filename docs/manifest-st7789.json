@@ -1,0 +1,16 @@
+{
+  "name": "OpenDash MicroPython (ST7789)",
+  "version": "2.1.1-mpy.1",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "firmware/OpenDash-MicroPython-st7789-full.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenDash MicroPython — веб-установщик</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --line: #30363d;
+      --text: #e6edf3;
+      --dim: #8b949e;
+      --accent: #2f81f7;
+      --good: #3fb950;
+      --warn: #d29922;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+      background: radial-gradient(900px 500px at 50% -120px, #172a45, var(--bg));
+      color: var(--text);
+    }
+    main { max-width: 800px; margin: 0 auto; padding: 48px 20px 72px; }
+    h1 { font-size: 2rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+    h2 { font-size: 1.1rem; margin: 0 0 12px; }
+    p { color: var(--dim); }
+    a { color: #79c0ff; }
+    .lead { font-size: 1.05rem; max-width: 62ch; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border: 1px solid var(--line);
+      border-radius: 999px; color: var(--dim); font-size: .8rem; vertical-align: 3px;
+    }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); margin: 28px 0; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+      padding: 20px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .card h2 { margin: 0; }
+    .card p { margin: 0; }
+    .tag { font-size: .8rem; color: var(--good); }
+    .tag.ili { color: var(--warn); }
+    .install {
+      margin-top: auto; align-self: start; border: 0; border-radius: 9px;
+      background: var(--accent); color: #fff; font: inherit; font-weight: 700;
+      padding: 10px 18px; cursor: pointer;
+    }
+    .install:hover { filter: brightness(1.08); }
+    .note {
+      border-left: 3px solid var(--accent); background: #101826; border-radius: 0 8px 8px 0;
+      padding: 14px 16px; margin: 18px 0;
+    }
+    .note p { color: var(--text); margin: 0; }
+    .small { font-size: .9rem; }
+    code { color: #c9d1d9; background: #161b22; padding: 1px 5px; border-radius: 4px; }
+    ol, ul { color: var(--dim); padding-left: 1.3em; }
+    li { margin: 6px 0; }
+    footer { margin-top: 36px; border-top: 1px solid var(--line); padding-top: 18px; font-size: .9rem; }
+  </style>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+</head>
+<body>
+<main>
+  <h1>OpenDash MicroPython <span class="badge">2.1.1-mpy.1</span></h1>
+  <p class="lead">Браузерный установщик OpenDash для ESP32 CYD. Записывает
+  MicroPython с OTA-разделами и сразу добавляет файлы приложения во внутреннюю
+  файловую систему — после установки ничего копировать вручную не нужно.</p>
+
+  <div class="note">
+    <p><b>Установка стирает flash</b>, включая настройки. Выберите ревизию
+    дисплея: ST7789 обычно стоит в CYD «2 USB», ILI9341 — в другой ревизии.
+    Нужен Chrome или Edge на компьютере и USB-кабель с передачей данных.</p>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>ST7789</h2>
+      <div class="tag">CYD 2 USB, наиболее распространённая</div>
+      <p>MicroPython ESP32 OTA v1.29.0 + OpenDash с драйвером ST7789 и
+      предзаполненным LittleFS.</p>
+      <esp-web-install-button manifest="manifest-st7789.json">
+        <button slot="activate" class="install">Установить ST7789</button>
+        <span slot="unsupported" class="small">Нужен Chrome или Edge на компьютере.</span>
+        <span slot="not-allowed" class="small">Откройте страницу по HTTPS.</span>
+      </esp-web-install-button>
+    </section>
+
+    <section class="card">
+      <h2>ILI9341</h2>
+      <div class="tag ili">ревизия CYD с ILI9341</div>
+      <p>То же самое, но с драйвером ILI9341. Версия MicroPython и разделы
+      совпадают.</p>
+      <esp-web-install-button manifest="manifest-ili9341.json">
+        <button slot="activate" class="install">Установить ILI9341</button>
+        <span slot="unsupported" class="small">Нужен Chrome или Edge на компьютере.</span>
+        <span slot="not-allowed" class="small">Откройте страницу по HTTPS.</span>
+      </esp-web-install-button>
+    </section>
+  </div>
+
+  <h2>Что происходит при установке</h2>
+  <ol>
+    <li>Стирается flash ESP32 (4 MB).</li>
+    <li>Записывается полный образ 4 MB. В нём по адресу <code>0x1000</code>
+        находится официальная сборка <b>MicroPython ESP32 OTA v1.29.0</b>
+        с двумя OTA-слотами.</li>
+    <li>По адресу <code>0x310000</code> лежит образ LittleFS
+        <code>0xF0000</code> с <code>boot.py</code>, <code>main.py</code> и
+        пакетом <code>opendash</code>.</li>
+    <li>Плата перезагружается и запускает приложение.</li>
+  </ol>
+
+  <p>Если плата не определяется, зажмите <b>BOOT</b> (GPIO 0), нажмите
+  <b>RESET</b>, отпустите BOOT и снова нажмите кнопку установки.</p>
+
+  <h2>Обновления</h2>
+  <p>Установленная прошивка поддерживает OTA. Откройте
+  <i>Настройки → Обновление OTA</i>, включите точку доступа, подключитесь к
+  показанной сети и загрузите на странице устройства
+  <b>app-образ <code>.app-bin</code></b>, например
+  <a href="https://micropython.org/resources/firmware/ESP32_GENERIC-OTA-20260824-v1.29.0.app-bin">ESP32_GENERIC-OTA-20260824-v1.29.0.app-bin</a>.
+  Полный установочный <code>.bin</code> для OTA не подходит.</p>
+
+  <p class="small">Чтобы обновить только Python-файлы без перепрошивки,
+  используйте <code>mpremote</code>; команды есть в
+  <a href="https://github.com/nope0183/OpenDash-MicroPython#ручная-установка">README</a>.</p>
+
+  <h2>Совместимость</h2>
+  <ul>
+    <li>ESP32-2432S028 «CYD», 4 MB flash, без PSRAM.</li>
+    <li>ST7789 или ILI9341, тач XPT2046.</li>
+    <li>Ninebot G30 / ES4 с BLE; для SHFW — соответствующая прошивка самоката.</li>
+    <li>Аппаратная проверка порта не проводилась; начинайте с безопасного
+        тестового стенда.</li>
+  </ul>
+
+  <footer>
+    <p>Исходники: <a href="https://github.com/nope0183/OpenDash-MicroPython">OpenDash-MicroPython</a>.
+    Оригинальный проект: <a href="https://github.com/nope0183/OpenDash">OpenDash</a>.
+    MicroPython распространяется по лицензии MIT.</p>
+  </footer>
+</main>
+</body>
+</html>

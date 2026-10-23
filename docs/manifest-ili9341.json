@@ -1,0 +1,16 @@
+{
+  "name": "OpenDash MicroPython (ILI9341)",
+  "version": "2.1.1-mpy.1",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "firmware/OpenDash-MicroPython-ili9341-full.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
