@@ -189,6 +189,8 @@ class Ninebot:
         self.last_poll = 0
         self.poll_idx = 0
         self.poll_brake = False
+        self.telemetry_pending = None
+        self.telemetry_pending_at = 0
         self.retry_at = 0
         self.deadline = 0
         self.ready_at = 0
@@ -364,6 +366,8 @@ class Ninebot:
         self._rx = bytearray()
         self.rxbuf = bytearray()
         self.rx_seen = 0
+        self.telemetry_pending = None
+        self.telemetry_pending_at = 0
         self.data.reset()
         # A dropped link invalidates both the SHFW cache and the write unlock:
         # the rider has to unlock editing again after reconnecting.
@@ -638,10 +642,14 @@ class Ninebot:
         if src == config.ADDR_ESC and arg == 0x26 and length >= 2:
             d.speed = abs(_s16(payload) * config.SPEED_SCALE)
             d.valid |= 1 << SPEED
+            if self.telemetry_pending == (src, arg):
+                self.telemetry_pending = None
             return
         if src == config.ADDR_BMS and arg == 0x33 and length >= 2:
             d.amp = _s16(payload) * config.BMS_CUR_SCALE
             d.valid |= 1 << AMP
+            if self.telemetry_pending == (src, arg):
+                self.telemetry_pending = None
             if d.has(SPEED) and d.speed > 3.0 and d.amp <= -config.BRAKE_REGEN_CURRENT_A:
                 d.brake_until = time.ticks_add(time.ticks_ms(), config.BRAKE_HOLD_MS)
             return
@@ -678,6 +686,8 @@ class Ninebot:
             elif ident == RIDE_MODE:
                 d.ride_mode = _u16(payload)
             d.valid |= 1 << ident
+            if self.telemetry_pending == (src, arg):
+                self.telemetry_pending = None
 
     # ------------------------------------------------------------------ poll
     def poll(self, now):
@@ -801,22 +811,32 @@ class Ninebot:
             if time.ticks_diff(now, self.last_rx) > config.LINK_TIMEOUT:
                 self._fail("link lost")
                 return
-            if not self.txq and not self.tx_busy:
+            if self.telemetry_pending is not None:
+                # G30 drops replies when reads overlap.  Allow one retry, but
+                # never build a queue of requests while waiting for a reply.
+                if time.ticks_diff(now, self.telemetry_pending_at) > 1200:
+                    self.telemetry_pending = None
+            if (self.telemetry_pending is None and not self.txq
+                    and not self.tx_busy):
                 if time.ticks_diff(now, self.last_fast) >= config.FAST_TELEMETRY_POLL_MS:
                     self.last_fast = now
                     if self.poll_brake:
-                        self.send_read(config.ADDR_BMS, 0x33, 2)
+                        dev, reg = config.ADDR_BMS, 0x33
                     else:
-                        self.send_read(config.ADDR_ESC, 0x26, 2)
+                        dev, reg = config.ADDR_ESC, 0x26
+                    if self.send_read(dev, reg, 2):
+                        self.telemetry_pending = (dev, reg)
+                        self.telemetry_pending_at = now
                     self.poll_brake = not self.poll_brake
-                if time.ticks_diff(now, self.last_poll) >= config.POLL_INTERVAL:
+                elif time.ticks_diff(now, self.last_poll) >= config.POLL_INTERVAL:
                     self.last_poll = now
                     dev, reg, size, ident = POLL_LIST[self.poll_idx]
                     self.poll_idx = (self.poll_idx + 1) % len(POLL_LIST)
                     slow_done = ((ident == SERIAL_NO and self.data.serial)
                                  or (ident == FW and self.data.fw))
-                    if not slow_done:
-                        self.send_read(dev, reg, size)
+                    if not slow_done and self.send_read(dev, reg, size):
+                        self.telemetry_pending = (dev, reg)
+                        self.telemetry_pending_at = now
             return
 
         # IDLE
