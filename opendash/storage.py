@@ -3,6 +3,11 @@ import json
 import os
 
 try:
+    import ubinascii as binascii
+except ImportError:
+    import binascii
+
+try:
     from . import config
 except ImportError:          # running from the repository root
     from opendash import config
@@ -134,4 +139,61 @@ def save(cfg):
         except OSError:
             pass
         print("settings save failed:", exc)
+        return False
+
+
+def load_pairing(name, serial):
+    """Return the saved app key only for the exact scooter identity."""
+    try:
+        with open(config.PAIRING_FILE, "r") as f:
+            data = json.load(f)
+    except OSError:
+        return None
+    except ValueError as exc:
+        print("pairing load failed:", exc)
+        return None
+
+    if not isinstance(data, dict) or data.get("name") != name:
+        return None
+    try:
+        saved_serial = binascii.unhexlify(data.get("serial", ""))
+        app_key = binascii.unhexlify(data.get("app_key", ""))
+    except (TypeError, ValueError):
+        print("pairing load failed: invalid credential format")
+        return None
+    if saved_serial != serial or len(app_key) != 16:
+        return None
+    return app_key
+
+
+def save_pairing(name, serial, app_key):
+    if not name or not serial or len(app_key) != 16:
+        print("pairing save failed: invalid credentials")
+        return False
+
+    data = {
+        "name": name,
+        "serial": binascii.hexlify(serial).decode(),
+        "app_key": binascii.hexlify(app_key).decode(),
+    }
+    tmp = config.PAIRING_FILE + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        try:
+            os.sync()
+        except AttributeError:
+            pass
+        os.rename(tmp, config.PAIRING_FILE)
+        try:
+            os.sync()
+        except AttributeError:
+            pass
+        return True
+    except OSError as exc:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        print("pairing save failed:", exc)
         return False

@@ -11,9 +11,11 @@ import time
 try:
     from . import config
     from .crypto import NinebotCrypto
+    from . import storage
 except ImportError:
     from opendash import config
     from opendash.crypto import NinebotCrypto
+    from opendash import storage
 
 # The SHFW table is large for an ESP32 without PSRAM.  Keep it off the boot
 # path: Ninebot.__init__ must succeed even when the heap is tight, and the
@@ -184,6 +186,7 @@ class Ninebot:
 
         self.auth_last = 0
         self.auth_attempts = 0
+        self.auth_app_key_reused = False
         self.last_rx = 0
         self.last_fast = 0
         self.last_poll = 0
@@ -492,6 +495,7 @@ class Ninebot:
         self.crypto.reset(self.dev_name)
         self.auth_state = AUTH_WAIT_INIT
         self.auth_attempts = 0
+        self.auth_app_key_reused = False
         self.press_power = False
         self.data.reset()
         self.state = AUTH
@@ -515,6 +519,9 @@ class Ninebot:
                 # Keep asking while the link is alive; the rider may need
                 # time to press the scooter's power button.
                 self.auth_attempts += 1
+                if self.auth_app_key_reused and self.auth_attempts == 3:
+                    self.press_power = True
+                    self._status("PRESS POWER", 0xFFE0)
                 self.send_packet(0x21, 0x5C, 0, self.crypto.random_app)
                 self.auth_last = now
         elif self.auth_state == AUTH_WAIT_PAIR:
@@ -577,10 +584,17 @@ class Ninebot:
 
         if (src == 0x21 and dst == config.ADDR_APP and cmd == 0x5B
                 and self.auth_state == AUTH_WAIT_INIT):
-            self.crypto.random_app = os.urandom(16)
+            saved_key = storage.load_pairing(self.dev_name, self.crypto.serial)
+            if saved_key is None:
+                self.crypto.random_app = os.urandom(16)
+                self.press_power = True
+                self._status("PRESS POWER", 0xFFE0)
+            else:
+                self.crypto.random_app = saved_key
+                self.auth_app_key_reused = True
+                self.press_power = False
+                self._status("AUTH KEY", 0x07FF)
             self.auth_state = AUTH_WAIT_PING
-            self.press_power = True
-            self._status("PRESS POWER", 0xFFE0)
             self._send_ping()
             return
         if (src == 0x21 and dst == config.ADDR_APP and cmd == 0x5C
@@ -601,6 +615,11 @@ class Ninebot:
             if arg == 0x01:
                 self.auth_state = AUTH_READY
                 self.state = READY
+                if not storage.save_pairing(
+                        self.dev_name, self.crypto.serial,
+                        self.crypto.random_app):
+                    print("paired key was not saved; next connection may need "
+                          "power-button confirmation")
                 self.press_power = False
                 self.last_rx = time.ticks_ms()
                 self.ready_at = self.last_rx
