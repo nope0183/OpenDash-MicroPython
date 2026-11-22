@@ -67,6 +67,19 @@ class NinebotPairingTests(unittest.TestCase):
         self.assertTrue(self.client.press_power)
         self.assertEqual(self.client.status_text, "PRESS POWER")
 
+    def test_saved_key_sends_pair_on_ping_zero_without_prompt(self):
+        self.client.auth_state = ninebot.AUTH_WAIT_PING
+        self.client.auth_app_key_reused = True
+        self.client.press_power = False
+        with patch.object(ninebot.time, "ticks_ms", return_value=1, create=True):
+            self.client._handle_plain(
+                bytes((0x5A, 0xA5, 0, 0x21, config.ADDR_APP, 0x5C, 0)))
+
+        self.assertEqual(self.client.auth_state, ninebot.AUTH_WAIT_PAIR)
+        self.assertFalse(self.client.press_power)
+        self.client.send_packet.assert_called_once_with(
+            0x21, 0x5D, 0, b"12345678901234")
+
     def test_key_is_saved_only_after_pair_ack(self):
         app_key = b"k" * 16
         self.client.crypto.random_app = app_key

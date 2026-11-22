@@ -527,6 +527,9 @@ class Ninebot:
         elif self.auth_state == AUTH_WAIT_PAIR:
             if time.ticks_diff(now, self.auth_last) > 1200:
                 self.auth_attempts += 1
+                if self.auth_app_key_reused and self.auth_attempts >= 3:
+                    self.press_power = True
+                    self._status("PRESS POWER", 0xFFE0)
                 self.send_packet(0x21, 0x5D, 0, self.crypto.serial)
                 self.auth_last = now
 
@@ -600,7 +603,7 @@ class Ninebot:
         if (src == 0x21 and dst == config.ADDR_APP and cmd == 0x5C
                 and self.auth_state == AUTH_WAIT_PING):
             self.auth_last = time.ticks_ms()
-            if arg == 0x01:
+            if arg == 0x01 or self.auth_app_key_reused:
                 self.press_power = False
                 self.auth_state = AUTH_WAIT_PAIR
                 self._status("PAIRING", 0x07FF)
